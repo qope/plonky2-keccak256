@@ -126,7 +126,7 @@ where
     }
 }
 
-// ref: plonky2-sha256
+// reffered to https://github.com/polymerdao/plonky2-sha256
 fn rotate_u64(y: usize) -> Vec<usize> {
     let mut res = Vec::new();
     for i in 64 - y..64 {

@@ -174,6 +174,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use anyhow::Result;
     use plonky2::{
         field::goldilocks_field::GoldilocksField,
@@ -253,7 +255,17 @@ mod tests {
             pw.set_bool_target(output_t[i], exptected_output_bits[i]);
         }
         let data = builder.build::<C>();
+
+        let now = Instant::now();
         let proof = data.prove(pw)?;
+
+        println!("time = {} ms", now.elapsed().as_millis());
+        println!(
+            "degree = {}, degree_bits= {}",
+            data.common.degree(),
+            data.common.degree_bits()
+        );
+        
         data.verify(proof)?;
         Ok(())
     }
