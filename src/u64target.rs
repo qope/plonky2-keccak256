@@ -10,9 +10,8 @@ use plonky2::{
     plonk::circuit_builder::CircuitBuilder,
 };
 
-// #[derive(Copy)]
 pub struct U64Target<F, const D: usize> {
-    bits: Vec<BoolTarget>,
+    pub bits: Vec<BoolTarget>,
     _phantom: PhantomData<F>,
 }
 
@@ -124,6 +123,23 @@ where
             _phantom: PhantomData,
         }
     }
+}
+
+pub fn xor_circuit<F, const D: usize>(
+    a: BoolTarget,
+    b: BoolTarget,
+    builder: &mut CircuitBuilder<F, D>,
+) -> BoolTarget
+where
+    F: RichField + Extendable<D>,
+{
+    let ab = builder.mul(a.target, b.target);
+    let a_plus_b = builder.add(a.target, b.target);
+    let neg_two = F::NEG_ONE * F::TWO;
+    let a_plus_b_neg_two_ab = builder.mul_const_add(neg_two, ab, a_plus_b);
+    let c = builder.add_virtual_bool_target_safe();
+    builder.connect(c.target, a_plus_b_neg_two_ab);
+    c
 }
 
 // reffered to https://github.com/polymerdao/plonky2-sha256

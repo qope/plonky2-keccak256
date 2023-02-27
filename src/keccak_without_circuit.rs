@@ -1,34 +1,4 @@
-use tiny_keccak::{Hasher, Keccak};
-
-const ROUND_CONSTANTS: [u64; 24] = [
-    1u64,
-    0x8082u64,
-    0x800000000000808au64,
-    0x8000000080008000u64,
-    0x808bu64,
-    0x80000001u64,
-    0x8000000080008081u64,
-    0x8000000000008009u64,
-    0x8au64,
-    0x88u64,
-    0x80008009u64,
-    0x8000000au64,
-    0x8000808bu64,
-    0x800000000000008bu64,
-    0x8000000000008089u64,
-    0x8000000000008003u64,
-    0x8000000000008002u64,
-    0x8000000000000080u64,
-    0x800au64,
-    0x800000008000000au64,
-    0x8000000080008081u64,
-    0x8000000000008080u64,
-    0x80000001u64,
-    0x8000000080008008u64,
-];
-const ROTR: [usize; 25] = [
-    0, 1, 62, 28, 27, 36, 44, 6, 55, 20, 3, 10, 43, 25, 39, 41, 45, 15, 21, 8, 18, 2, 61, 56, 14,
-];
+use crate::constants::{ROTR, ROUND_CONSTANTS};
 
 fn round(a: [u64; 25], rc: u64) -> [u64; 25] {
     let mut a = a;
@@ -184,19 +154,20 @@ pub fn keccak256(input: &[u8]) -> Vec<u8> {
     z
 }
 
-pub fn expected_keccak(input: &[u8]) -> String {
-    let mut hasher = Keccak::v256();
-    hasher.update(&input);
-    let mut hash = [0u8; 32];
-    hasher.finalize(&mut hash);
-    let expected = hex::encode(hash);
-    expected
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use rand::Rng;
+    use tiny_keccak::{Hasher, Keccak};
+
+    fn expected_keccak(input: &[u8]) -> String {
+        let mut hasher = Keccak::v256();
+        hasher.update(&input);
+        let mut hash = [0u8; 32];
+        hasher.finalize(&mut hash);
+        let expected = hex::encode(hash);
+        expected
+    }
 
     fn random_bytes_vec<R: Rng>(lenght: usize, rng: &mut R) -> Vec<u8> {
         let rand_vec = (0..lenght).map(|_| rng.gen()).collect::<Vec<u8>>();
@@ -204,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hash() {
+    fn test_keccak256_without_ciruit() {
         let rng = &mut rand::thread_rng();
         for length in [4, 1000, 20000, 136] {
             let input = random_bytes_vec(length, rng);
@@ -215,7 +186,7 @@ mod tests {
     }
 
     #[test]
-    fn test_keccakf() {
+    fn test_keccakf_without_ciruit() {
         let input = "bb45f489bea73ef400b0ef4cd65dcec3565b0fd75c6eb248f1fefc84dd216650327e5a5c9b02ed7ce898f8ecb2e045cded87742a7723e7fddd9ac96c8aa70f4601000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
         let expected_output = "61060054a4f8cd82609992a7604a95c9165bc95ae016a5299dd7d400dddbea9a3069922d826066fae8aad9aac3d937d6b6db11d4e3ce7663ef4236ca2f1a97a3de6259030506c8f50dcec6588ba1e7598a5f39e74f8f858f3fc04a371d52d761cb369205487758026a035dc5edd42a6bb4f1cc84c2f5a4f7915993a7b209935c40a06104fc2d4d3e337a79a6671f69fb0b3a14ccdf72f66f59828ab0f43bedab3622aa17746d3e536b9bd39974f215916563a5ed55d944d6137ce8cf03677e57bc75e502054f51b0";
 

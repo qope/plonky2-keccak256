@@ -1,43 +1,13 @@
 use std::marker::PhantomData;
 
+use crate::constants::{ROTR, ROUND_CONSTANTS};
+use crate::u64target::{xor_circuit, U64Target};
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::RichField,
     iop::{target::BoolTarget, witness::PartialWitness},
     plonk::circuit_builder::CircuitBuilder,
 };
-
-use crate::u64target::U64Target;
-
-const ROUND_CONSTANTS: [u64; 24] = [
-    1u64,
-    0x8082u64,
-    0x800000000000808au64,
-    0x8000000080008000u64,
-    0x808bu64,
-    0x80000001u64,
-    0x8000000080008081u64,
-    0x8000000000008009u64,
-    0x8au64,
-    0x88u64,
-    0x80008009u64,
-    0x8000000au64,
-    0x8000808bu64,
-    0x800000000000008bu64,
-    0x8000000000008089u64,
-    0x8000000000008003u64,
-    0x8000000000008002u64,
-    0x8000000000000080u64,
-    0x800au64,
-    0x800000008000000au64,
-    0x8000000080008081u64,
-    0x8000000000008080u64,
-    0x80000001u64,
-    0x8000000080008008u64,
-];
-const ROTR: [usize; 25] = [
-    0, 1, 62, 28, 27, 36, 44, 6, 55, 20, 3, 10, 43, 25, 39, 41, 45, 15, 21, 8, 18, 2, 61, 56, 14,
-];
 
 pub struct KeccakTarget<F, const D: usize> {
     words: Vec<U64Target<F, D>>,
@@ -172,6 +142,70 @@ where
     z
 }
 
+pub fn keccak256_circuit_v2<F, const D: usize>(
+    input: Vec<BoolTarget>,
+    builder: &mut CircuitBuilder<F, D>,
+) -> Vec<BoolTarget>
+where
+    F: RichField + Extendable<D>,
+{
+    assert_eq!(input.len() % 8, 0); // input should be bytes.
+    let block_size_in_bytes = 136; // in bytes
+    let input_len_in_bytes = input.len() / 8;
+    let num_blocks = input_len_in_bytes / block_size_in_bytes + 1;
+    dbg!(num_blocks);
+
+    let mut padded = vec![];
+    for _ in 0..block_size_in_bytes * 8 * num_blocks {
+        padded.push(builder.add_virtual_bool_target_safe());
+    }
+
+    // register input
+    for i in 0..input_len_in_bytes * 8 {
+        builder.connect(padded[i].target, input[i].target);
+    }
+
+    // append 0x01 = 1000 0000 after the last input
+    let true_target = builder.constant_bool(true);
+    builder.connect(padded[input_len_in_bytes * 8].target, true_target.target);
+
+    // pad 0s
+    let false_target = builder.constant_bool(false);
+    let last_index = padded.len() - 1;
+    for i in input_len_in_bytes * 8 + 1..last_index {
+        builder.connect(padded[i].target, false_target.target);
+    }
+
+    // xor 0x80 = 0000 0001 with the last byte.
+    // however the last bit is ensured to be 0, so just fill 1.
+    builder.connect(padded[last_index].target, true_target.target);
+
+    let mut m = KeccakTarget::new(builder);
+    for i in 0..num_blocks {
+        for j in 0..block_size_in_bytes * 8 {
+            let word = j / 64;
+            let bit = j % 64;
+            let xor_t = xor_circuit(
+                m.words[word].bits[bit],
+                padded[i * block_size_in_bytes * 8 + j],
+                builder,
+            );
+            m.words[word].bits[bit] = xor_t;
+        }
+        m = m.keccakf(builder);
+    }
+
+    let mut z = Vec::new();
+    for i in 0..256 {
+        let new_target = builder.add_virtual_bool_target_safe();
+        let word = i / 64;
+        let bit = i % 64;
+        builder.connect(new_target.target, m.words[word].bits[bit].target);
+        z.push(new_target);
+    }
+    z
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
@@ -265,7 +299,46 @@ mod tests {
             data.common.degree(),
             data.common.degree_bits()
         );
-        
+
+        data.verify(proof)?;
+        Ok(())
+    }
+
+    #[test]
+    #[ignore]
+    fn test_keccak256_circuit_v2() -> Result<()> {
+        let input = "8f54f1c2d0eb5771cd5bf67a6689fcd6eed9444d91a39e5ef32a9b4ae5ca14ff8f54f1c2d0eb5771cd5bf67a6689fcd6eed9444d91a39e5ef32a9b4ae5ca14ff";
+        let mut hasher = Keccak::v256();
+        let input_u8 = hex::decode(&input)?;
+        hasher.update(&input_u8);
+        let mut hash = [0u8; 32];
+        hasher.finalize(&mut hash);
+        let expected_output = hex::encode(hash);
+        let input_bits = hex_str_to_bits(input)?;
+        let exptected_output_bits = hex_str_to_bits(&expected_output)?;
+        let config = CircuitConfig::standard_recursion_config();
+        let mut builder = CircuitBuilder::<F, D>::new(config);
+        let mut input_t = vec![];
+        for i in 0..512 {
+            input_t.push(builder.constant_bool(input_bits[i]));
+        }
+        let output_t = keccak256_circuit_v2(input_t, &mut builder);
+        let mut pw = PartialWitness::new();
+        for i in 0..256 {
+            pw.set_bool_target(output_t[i], exptected_output_bits[i]);
+        }
+        let data = builder.build::<C>();
+
+        let now = Instant::now();
+        let proof = data.prove(pw)?;
+
+        println!("time = {} ms", now.elapsed().as_millis());
+        println!(
+            "degree = {}, degree_bits= {}",
+            data.common.degree(),
+            data.common.degree_bits()
+        );
+
         data.verify(proof)?;
         Ok(())
     }
