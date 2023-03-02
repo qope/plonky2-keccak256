@@ -1,6 +1,6 @@
 # Plonky2-keccak256
 
-Currently, the keccak256 circuit with a fixed length is only available. In the future, I plan to implement a circuit with a variable input length (where the length does not need to be specified during circuit build).
+Plonky2 implementation of Solidity compatible Keccak256 circuit.
 
 ## Usage
 
