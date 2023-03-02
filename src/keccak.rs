@@ -212,6 +212,15 @@ mod tests {
         Ok(input_bits)
     }
 
+    fn expected_keccak(input: &[u8]) -> String {
+        let mut hasher = Keccak::v256();
+        hasher.update(&input);
+        let mut hash = [0u8; 32];
+        hasher.finalize(&mut hash);
+        let expected = hex::encode(hash);
+        expected
+    }
+
     #[test]
     fn test_keccakf() -> Result<()> {
         let input = "bb45f489bea73ef400b0ef4cd65dcec3565b0fd75c6eb248f1fefc84dd216650327e5a5c9b02ed7ce898f8ecb2e045cded87742a7723e7fddd9ac96c8aa70f4601000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
@@ -237,27 +246,26 @@ mod tests {
     #[test]
     fn test_keccak256_circuit() -> Result<()> {
         let input = "8f54f1c2d0eb5771cd5bf67a6689fcd6eed9444d91a39e5ef32a9b4ae5ca14ff8f54f1c2d0eb5771cd5bf67a6689fcd6eed9444d91a39e5ef32a9b4ae5ca14ff";
-        let mut hasher = Keccak::v256();
-        let input_u8 = hex::decode(&input)?;
-        hasher.update(&input_u8);
-        let mut hash = [0u8; 32];
-        hasher.finalize(&mut hash);
-        let expected_output = hex::encode(hash);
+        let expected_output = expected_keccak(&hex::decode(input).unwrap());
+
         let input_bits = hex_str_to_bits(input)?;
         let exptected_output_bits = hex_str_to_bits(&expected_output)?;
+
         let config = CircuitConfig::standard_recursion_config();
         let mut builder = CircuitBuilder::<F, D>::new(config);
+
         let mut input_t = vec![];
         for i in 0..512 {
             input_t.push(builder.constant_bool(input_bits[i]));
         }
         let output_t = keccak256_circuit(input_t, &mut builder);
+
         let mut pw = PartialWitness::new();
         for i in 0..256 {
             pw.set_bool_target(output_t[i], exptected_output_bits[i]);
         }
-        let data = builder.build::<C>();
 
+        let data = builder.build::<C>();
         let now = Instant::now();
         let proof = data.prove(pw)?;
 
