@@ -32,7 +32,3 @@ test keccak::tests::test_keccak256_circuit ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 6.85s
 
 ```
-
-```
-
-```
