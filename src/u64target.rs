@@ -69,19 +69,10 @@ where
     }
 
     pub fn xor(&self, other: &Self, builder: &mut CircuitBuilder<F, D>) -> Self {
-        // a = 0, b = 0 => 0
-        // a = 1, b = 0 => 1
-        // a = 0, b = 1 => 1
-        // a = 1, b = 1 => 0
-        // xor(a, b) = a*(1-b) + (1-a)*b = a + b - 2*ab
         let mut result = vec![];
         for i in 0..64 {
-            let ab = builder.mul(self.bits[i].target, other.bits[i].target);
-            let a_plus_b = builder.add(self.bits[i].target, other.bits[i].target);
-            let neg_two = F::NEG_ONE * F::TWO;
-            result.push(BoolTarget::new_unsafe(
-                builder.mul_const_add(neg_two, ab, a_plus_b),
-            ));
+            let xor_target = xor_circuit(self.bits[i], other.bits[i], builder);
+            result.push(xor_target);
         }
         Self {
             bits: result,
@@ -133,6 +124,11 @@ pub fn xor_circuit<F, const D: usize>(
 where
     F: RichField + Extendable<D>,
 {
+    // a = 0, b = 0 => 0
+    // a = 1, b = 0 => 1
+    // a = 0, b = 1 => 1
+    // a = 1, b = 1 => 0
+    // xor(a, b) = a*(1-b) + (1-a)*b = a + b - 2*ab
     let ab = builder.mul(a.target, b.target);
     let a_plus_b = builder.add(a.target, b.target);
     let neg_two = F::NEG_ONE * F::TWO;
