@@ -255,7 +255,7 @@ mod tests {
         let mut builder = CircuitBuilder::<F, D>::new(config);
 
         let mut input_t = vec![];
-        for i in 0..512 {
+        for i in 0..input_bits.len() {
             input_t.push(builder.constant_bool(input_bits[i]));
         }
         let output_t = keccak256_circuit(input_t, &mut builder);
