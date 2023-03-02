@@ -5,11 +5,11 @@ Currently, the keccak256 circuit with a fixed length is only available. In the f
 ## Usage
 
 ```rust
-let mut input_t = vec![];
+let mut input_target = vec![];
 for i in 0..input_bits.len() {
-    input_t.push(builder.constant_bool(input_bits[i]));
+    input_target.push(builder.constant_bool(input_bits[i]));
 }
-let output_t = keccak256_circuit(input_t, &mut builder);
+let output_target = keccak256_circuit(input_target, &mut builder);
 ```
 
 ## Test
