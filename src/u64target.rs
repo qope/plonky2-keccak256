@@ -10,6 +10,7 @@ use plonky2::{
     plonk::circuit_builder::CircuitBuilder,
 };
 
+#[derive(Clone, Debug)]
 pub struct U64Target<F, const D: usize> {
     pub bits: Vec<BoolTarget>,
     _phantom: PhantomData<F>,
@@ -33,7 +34,7 @@ where
     pub fn from(bits: Vec<BoolTarget>) -> Self {
         assert_eq!(bits.len(), 64);
         Self {
-            bits: bits,
+            bits,
             _phantom: PhantomData,
         }
     }
@@ -80,17 +81,34 @@ where
         }
     }
 
+    pub fn xor_const(&self, other: u64, builder: &mut CircuitBuilder<F, D>) -> Self {
+        let other_bits = u64_to_bits(other);
+        let mut result = vec![];
+        for i in 0..64 {
+            let xor_target = xor_const_circuit(self.bits[i], other_bits[i], builder);
+            result.push(xor_target);
+        }
+        Self {
+            bits: result,
+            _phantom: PhantomData,
+        }
+    }
+
     /* Rotate left by n
      * Note that the input parameter n is constant. It is not necessary to make n a constant target or public input,
      * because different n generates a different circuit.
      */
-    pub fn rotl(&self, n: usize, builder: &mut CircuitBuilder<F, D>) -> Self {
+    pub fn rotl(&self, n: usize) -> Self {
         let rotate = rotate_u64(n);
-        let output = Self::new(builder);
+        let mut output = vec![];
         for i in 0..64 {
-            builder.connect(self.bits[rotate[i]].target, output.bits[i].target);
+            output.push(self.bits[rotate[i]]);
         }
-        output
+
+        Self {
+            bits: output,
+            _phantom: PhantomData,
+        }
     }
 
     pub fn and(&self, other: &Self, builder: &mut CircuitBuilder<F, D>) -> Self {
@@ -114,6 +132,25 @@ where
             _phantom: PhantomData,
         }
     }
+
+    /// Calculate `self & !other`.
+    pub fn and_not(&self, other: &Self, builder: &mut CircuitBuilder<F, D>) -> Self {
+        let mut result = vec![];
+        for i in 0..64 {
+            // x(1 - y) = x - xy
+            result.push(BoolTarget::new_unsafe(builder.arithmetic(
+                F::NEG_ONE,
+                F::ONE,
+                self.bits[i].target,
+                other.bits[i].target,
+                self.bits[i].target,
+            )));
+        }
+        Self {
+            bits: result,
+            _phantom: PhantomData,
+        }
+    }
 }
 
 pub fn xor_circuit<F, const D: usize>(
@@ -129,16 +166,35 @@ where
     // a = 0, b = 1 => 1
     // a = 1, b = 1 => 0
     // xor(a, b) = a*(1-b) + (1-a)*b = a + b - 2*ab
-    let ab = builder.mul(a.target, b.target);
-    let a_plus_b = builder.add(a.target, b.target);
-    let neg_two = F::NEG_ONE * F::TWO;
-    let a_plus_b_neg_two_ab = builder.mul_const_add(neg_two, ab, a_plus_b);
-    let c = builder.add_virtual_bool_target_safe();
-    builder.connect(c.target, a_plus_b_neg_two_ab);
-    c
+    let b_minus_2ab = builder.arithmetic(-F::TWO, F::ONE, a.target, b.target, b.target);
+    let a_plus_b_minus_2ab = builder.add(a.target, b_minus_2ab);
+    // let c = builder.add_virtual_bool_target_safe();
+    // builder.connect(c.target, a_plus_b_neg_two_ab);
+
+    BoolTarget::new_unsafe(a_plus_b_minus_2ab)
+}
+
+pub fn xor_const_circuit<F, const D: usize>(
+    a: BoolTarget,
+    b: bool,
+    builder: &mut CircuitBuilder<F, D>,
+) -> BoolTarget
+where
+    F: RichField + Extendable<D>,
+{
+    // b = 0 => xor(a, b) = a
+    // b = 1 => xor(a, b) = 1 - a = not(a)
+    if b {
+        builder.not(a)
+    } else {
+        a
+    }
 }
 
 // reffered to https://github.com/polymerdao/plonky2-sha256
+/// 0 -> [0, 1, 2, ..., 63]
+/// 1 -> [63, 0, 1, ..., 62]
+/// 63 -> [1, 2, ..., 63, 0]
 fn rotate_u64(y: usize) -> Vec<usize> {
     let mut res = Vec::new();
     for i in 64 - y..64 {
@@ -222,7 +278,7 @@ mod tests {
         let config = CircuitConfig::standard_recursion_config();
         let mut builder = CircuitBuilder::<F, D>::new(config);
         let a_t = U64Target::constant(a, &mut builder);
-        let a_rotl_t = a_t.rotl(n, &mut builder);
+        let a_rotl_t = a_t.rotl(n);
 
         let mut pw = PartialWitness::<F>::new();
         a_rotl_t.set_witness(u64_to_bits(expected_output), &mut pw);
