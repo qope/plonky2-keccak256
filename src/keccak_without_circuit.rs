@@ -6,9 +6,9 @@ fn round(a: [u64; 25], rc: u64) -> [u64; 25] {
     let mut c = [0u64; 5];
     for x in 0..5 {
         c[x] = xor(
-            a[x + 0 * 5],
+            a[x],
             xor(
-                a[x + 1 * 5],
+                a[x + 5],
                 xor(a[x + 2 * 5], xor(a[x + 3 * 5], a[x + 4 * 5])),
             ),
         );
