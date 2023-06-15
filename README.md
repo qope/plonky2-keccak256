@@ -24,11 +24,8 @@ Result
 
 ```
 
-[src/keccak.rs:119] num_blocks = 1
-time = 2654 ms
-degree = 32768, degree_bits= 15
+[src/keccak.rs:276] builder.num_gates() = 13702
+time = 1028 ms
+degree = 16384, degree_bits= 14
 test keccak::tests::test_keccak256_circuit ... ok
-
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 6.85s
-
 ```
