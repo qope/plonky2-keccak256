@@ -9,6 +9,7 @@ use plonky2::{
     plonk::circuit_builder::CircuitBuilder,
 };
 
+#[derive(Clone, Debug)]
 pub struct KeccakTarget<F, const D: usize> {
     words: Vec<U64Target<F, D>>,
     _phantom: PhantomData<F>,
@@ -53,11 +54,12 @@ where
         }
     }
 
+    // 641 gates
     pub fn keccak_round(&mut self, rc: u64, builder: &mut CircuitBuilder<F, D>) {
         // θ step
         let mut c = vec![];
         for x in 0..5 {
-            let xor01 = self.words[x + 0 * 5].xor(&self.words[x + 1 * 5], builder);
+            let xor01 = self.words[x].xor(&self.words[x + 5], builder);
             let xor012 = xor01.xor(&self.words[x + 2 * 5], builder);
             let xor0123 = xor012.xor(&self.words[x + 3 * 5], builder);
             let xor01234 = xor0123.xor(&self.words[x + 4 * 5], builder);
@@ -65,7 +67,7 @@ where
         }
         let mut d = vec![];
         for x in 0..5 {
-            let rot_c = c[(x + 1) % 5].rotl(1, builder);
+            let rot_c = c[(x + 1) % 5].rotl(1);
             d.push(c[(x + 4) % 5].xor(&rot_c, builder));
         }
         for x in 0..5 {
@@ -74,34 +76,38 @@ where
             }
         }
         // ρ and π steps
-        let b = KeccakTarget::new(builder);
+        let mut b_words: [Option<U64Target<F, D>>; 25] = [(); 25].map(|_| None);
         for x in 0..5 {
             for y in 0..5 {
-                let rot_self = self.words[x + y * 5].rotl(ROTR[x + y * 5], builder);
-                b.words[y + ((2 * x + 3 * y) % 5) * 5].connect(&rot_self, builder);
+                let rot_self = self.words[x + y * 5].rotl(ROTR[x + y * 5]);
+                
+                b_words[y + ((2 * x + 3 * y) % 5) * 5] = Some(rot_self);
             }
         }
+        let b = KeccakTarget {
+            words: b_words.into_iter().map(|x| x.unwrap()).collect(),
+            _phantom: PhantomData,
+        };
 
         // χ step
         for x in 0..5 {
             for y in 0..5 {
-                let not_b = b.words[(x + 1) % 5 + y * 5].not(builder);
-                let and_not_b = not_b.and(&b.words[(x + 2) % 5 + y * 5], builder);
+                // b.words[(x + 2) % 5 + y * 5] & !b.words[(x + 1) % 5 + y * 5]
+                let and_not_b = b.words[(x + 2) % 5 + y * 5].and_not(&b.words[(x + 1) % 5 + y * 5], builder);
                 self.words[x + y * 5] = b.words[x + y * 5].xor(&and_not_b, builder);
             }
         }
 
-        let const_rc = U64Target::constant(rc, builder);
-        self.words[0] = self.words[0].xor(&const_rc, builder);
+        self.words[0] = self.words[0].xor_const(rc, builder);
     }
 
     pub fn keccakf(&self, builder: &mut CircuitBuilder<F, D>) -> Self {
-        let mut output = Self::new(builder);
-        output.connect(&self, builder);
-        for i in 0..24 {
-            output.keccak_round(ROUND_CONSTANTS[i], builder);
+        let mut result = self.clone();
+        for round_constant in ROUND_CONSTANTS.into_iter().take(24) {
+            result.keccak_round(round_constant, builder);
         }
-        output
+
+        result
     }
 }
 
@@ -185,6 +191,7 @@ mod tests {
         iop::witness::WitnessWrite,
         plonk::{circuit_data::CircuitConfig, config::PoseidonGoldilocksConfig},
     };
+    use rand::random;
     use tiny_keccak::{Hasher, Keccak};
 
     type F = GoldilocksField;
@@ -214,11 +221,11 @@ mod tests {
 
     fn expected_keccak(input: &[u8]) -> String {
         let mut hasher = Keccak::v256();
-        hasher.update(&input);
+        hasher.update(input);
         let mut hash = [0u8; 32];
         hasher.finalize(&mut hash);
-        let expected = hex::encode(hash);
-        expected
+
+        hex::encode(hash)
     }
 
     #[test]
@@ -237,6 +244,7 @@ mod tests {
         input_t.set_witness(input_bits, &mut pw);
         output_t.set_witness(output_bits, &mut pw);
 
+        dbg!(builder.num_gates());
         let data = builder.build::<C>();
         let proof = data.prove(pw)?;
         data.verify(proof)?;
@@ -265,7 +273,48 @@ mod tests {
             pw.set_bool_target(output_t[i], exptected_output_bits[i]);
         }
 
+        dbg!(builder.num_gates());
         let data = builder.build::<C>();
+        let now = Instant::now();
+        let proof = data.prove(pw)?;
+
+        println!("time = {} ms", now.elapsed().as_millis());
+        println!(
+            "degree = {}, degree_bits= {}",
+            data.common.degree(),
+            data.common.degree_bits()
+        );
+
+        data.verify(proof)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_random_keccak256_circuit() -> Result<()> {
+        let input_len:usize = random();
+        let input_len = input_len%128;
+        let input: Vec<u8> = (0..input_len).map(|_| random()).collect();
+        let input_bits = hex_str_to_bits(&hex::encode(&input))?;
+
+        let expected_output = expected_keccak(&input);
+        let exptected_output_bits = hex_str_to_bits(&expected_output)?;
+
+        let config = CircuitConfig::standard_recursion_config();
+        let mut builder = CircuitBuilder::<F, D>::new(config);
+
+        let mut input_t = vec![];
+        for i in 0..input_bits.len() {
+            input_t.push(builder.constant_bool(input_bits[i]));
+        }
+        let output_t = keccak256_circuit(input_t, &mut builder);
+
+        let mut pw = PartialWitness::new();
+        for i in 0..256 {
+            pw.set_bool_target(output_t[i], exptected_output_bits[i]);
+        }
+
+        let data = builder.build::<C>();
+        dbg!(data.verifier_only.circuit_digest);
         let now = Instant::now();
         let proof = data.prove(pw)?;
 
