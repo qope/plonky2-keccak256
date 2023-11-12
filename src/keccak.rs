@@ -80,7 +80,7 @@ where
         for x in 0..5 {
             for y in 0..5 {
                 let rot_self = self.words[x + y * 5].rotl(ROTR[x + y * 5]);
-                
+
                 b_words[y + ((2 * x + 3 * y) % 5) * 5] = Some(rot_self);
             }
         }
@@ -93,7 +93,8 @@ where
         for x in 0..5 {
             for y in 0..5 {
                 // b.words[(x + 2) % 5 + y * 5] & !b.words[(x + 1) % 5 + y * 5]
-                let and_not_b = b.words[(x + 2) % 5 + y * 5].and_not(&b.words[(x + 1) % 5 + y * 5], builder);
+                let and_not_b =
+                    b.words[(x + 2) % 5 + y * 5].and_not(&b.words[(x + 1) % 5 + y * 5], builder);
                 self.words[x + y * 5] = b.words[x + y * 5].xor(&and_not_b, builder);
             }
         }
@@ -122,7 +123,6 @@ where
     let block_size_in_bytes = 136; // in bytes
     let input_len_in_bytes = input.len() / 8;
     let num_blocks = input_len_in_bytes / block_size_in_bytes + 1;
-    dbg!(num_blocks);
 
     let mut padded = vec![];
     for _ in 0..block_size_in_bytes * 8 * num_blocks {
@@ -244,7 +244,6 @@ mod tests {
         input_t.set_witness(input_bits, &mut pw);
         output_t.set_witness(output_bits, &mut pw);
 
-        dbg!(builder.num_gates());
         let data = builder.build::<C>();
         let proof = data.prove(pw)?;
         data.verify(proof)?;
@@ -273,7 +272,6 @@ mod tests {
             pw.set_bool_target(output_t[i], exptected_output_bits[i]);
         }
 
-        dbg!(builder.num_gates());
         let data = builder.build::<C>();
         let now = Instant::now();
         let proof = data.prove(pw)?;
@@ -291,8 +289,8 @@ mod tests {
 
     #[test]
     fn test_random_keccak256_circuit() -> Result<()> {
-        let input_len:usize = random();
-        let input_len = input_len%128;
+        let input_len: usize = random();
+        let input_len = input_len % 128;
         let input: Vec<u8> = (0..input_len).map(|_| random()).collect();
         let input_bits = hex_str_to_bits(&hex::encode(&input))?;
 
@@ -314,7 +312,6 @@ mod tests {
         }
 
         let data = builder.build::<C>();
-        dbg!(data.verifier_only.circuit_digest);
         let now = Instant::now();
         let proof = data.prove(pw)?;
 
